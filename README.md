@@ -56,17 +56,17 @@ gcc NMEA_data_split.c -o nmea_parser
 ## Output Example
 
 ```
-[2026-04-03_13:07:44:630] $GNGGA (Multi-constellation)
-  Time (UTC)  : 06:07:45
+[2026-04-03_13:07:45:027] $GNGGA (Multi-constellation)
+  Time (UTC)  : 06:07:46
   Latitude    : 20.921361 N
-  Longitude   : 105.855592 E
+  Longitude   : 105.855595 E
   Fix quality : 1 = GPS fix
   Satellites  : 13
   HDOP        : 0.72
   Altitude    : 8.385 m
   Geoid sep.  : -20.559 m
 
-[2026-04-03_13:07:44:630] $GPGSV -- GPS Satellites in View (message 1 of 3, total visible: 11)
+[2026-04-03_13:07:44:622] $GPGSV -- GPS Satellites in View (message 1 of 3, total visible: 11)
   Sat #1 : PRN=194  Elev=54 deg  Azim=115 deg  SNR=-- (signal too weak / not tracked)
   Sat #2 : PRN=6    Elev=56 deg  Azim=340 deg  SNR=-- (signal too weak / not tracked)
   Sat #3 : PRN=41   Elev=54 deg  Azim=229 deg  SNR=37 dBHz
@@ -74,16 +74,18 @@ gcc NMEA_data_split.c -o nmea_parser
 
 ====================================================
   SUMMARY
-  Total NMEA sentences parsed : 847
-  GGA  (position fix)         : 62
-  RMC  (recommended minimum)  : 62
-  GSA  (active satellites)    : 248
-  GSV  (satellites in view)   : 186
-  VTG  (course and speed)     : 62
-  GLL  (geographic position)  : 62
+  Total NMEA sentences parsed : 1300
+  GGA  (position fix)         : 89
+  RMC  (recommended minimum)  : 90
+  GSA  (active satellites)    : 357
+  GSV  (satellites in view)   : 573
+  VTG  (course and speed)     : 90
+  GLL  (geographic position)  : 89
   Other / proprietary         : 12
 ====================================================
 ```
+
+*(Captured from a 131-second stationary field test of the wristband's LC76G module.)*
 
 ---
 
