@@ -1,0 +1,13 @@
+# Compiled binaries / build artifacts
+*.exe
+*.out
+*.o
+*.obj
+nmea_parser
+
+# Editor / IDE settings
+.vscode/
+
+# OS noise
+Thumbs.db
+.DS_Store

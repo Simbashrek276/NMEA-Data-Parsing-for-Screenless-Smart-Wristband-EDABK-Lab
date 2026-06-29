@@ -4,14 +4,24 @@
 
 /*
  * NMEA log parser for the LC76G GNSS module.
- * Reads a raw log file line by line and writes a readable breakdown to another file.
- * Nothing fancy here, just plain C and the standard library.
+ *
+ * I wrote this to make sense of the raw GPS logs our wristband's GNSS module
+ * produces during field testing. NMEA 0183 sentences are compact but hard to
+ * read at a glance, so this reads a log file line by line and writes a clear,
+ * human-readable breakdown to a separate file.
+ *
+ * I deliberately kept it to plain C and the standard library. No external
+ * dependencies means it compiles and runs anywhere a C compiler does, which
+ * matters when I'm testing on whatever machine is closest to the bench.
  */
 
 /*
- * Breaks an NMEA sentence into its comma-separated pieces.
- * Anything from the '*' onwards is the checksum, not data, so we stop there.
- * Gives back how many fields we actually grabbed.
+ * Splits an NMEA sentence into its comma-separated fields.
+ *
+ * Everything from the '*' onwards is the checksum rather than data, so I stop
+ * there. I copy each field manually (capped at 63 chars) instead of reaching
+ * for strtok, because strtok rewrites the original string in place and I wanted
+ * to leave the input untouched. Returns how many fields I actually extracted.
  *
  * e.g. "$GNGGA,123456,2055.28,N" -> fields[0]="$GNGGA", fields[1]="123456", ...
  */
@@ -31,11 +41,11 @@ int split_csv(char *line, char fields[][64], int max_fields) {
 
         if (end) {
             int len = (int)(end - ptr);
-            if (len >= 64) len = 63;          /* don't overflow the buffer */
+            if (len >= 64) len = 63;          /* clamp so I never overflow the field buffer */
             strncpy(fields[count], ptr, len);
             fields[count][len] = '\0';
             count++;
-            if (*end == '*') break;           /* hit the checksum, we're done */
+            if (*end == '*') break;           /* reached the checksum, so I'm done */
             ptr = end + 1;
         } else {
             /* last field, no delimiter after it */
@@ -49,8 +59,9 @@ int split_csv(char *line, char fields[][64], int max_fields) {
 }
 
 /*
- * NMEA packs coordinates as ddmm.mmmm (degrees and minutes stuck together).
- * This pulls them apart into plain decimal degrees. South and West go negative.
+ * NMEA packs coordinates as ddmm.mmmm (degrees and minutes run together).
+ * I convert them into plain decimal degrees here because that's the format I
+ * can drop straight into a map or a spreadsheet. South and West become negative.
  *
  * e.g. 2055.281665 N -> 20 + (55.281665 / 60) = 20.921361 degrees
  */
@@ -66,9 +77,9 @@ double nmea_to_decimal(double raw, char dir) {
 }
 
 /*
- * Our log lines look like  [YYYY-MM-DD_HH:MM:SS:mmm]$SENTENCE,...
- * Pull the timestamp out into ts, then hand back a pointer to the '$' where the
- * actual sentence starts. Returns NULL if there's no sentence on this line.
+ * My log lines look like  [YYYY-MM-DD_HH:MM:SS:mmm]$SENTENCE,...
+ * I pull the timestamp out into ts, then hand back a pointer to the '$' where
+ * the actual sentence starts. Returns NULL when a line has no sentence at all.
  */
 char *extract_parts(char *line, char *ts, int ts_size) {
     ts[0] = '\0';
@@ -84,14 +95,16 @@ char *extract_parts(char *line, char *ts, int ts_size) {
         return strchr(line, '$');
     }
 
-    /* some lines start straight at the sentence with no timestamp */
+    /* some lines start straight at the sentence with no timestamp, so I handle that too */
     if (line[0] == '$') return line;
 
     return NULL;
 }
 
 /*
- * Turns the two-letter talker ID into a readable constellation name.
+ * Turns the two-letter talker ID into a readable constellation name. I find the
+ * raw IDs easy to misread, so naming them out loud in the report saves me from
+ * second-guessing which system a sentence came from.
  *   GP -> GPS (USA),  GL -> GLONASS (Russia),  GA -> Galileo (Europe),
  *   GB -> BeiDou (China),  GN -> everything mixed together.
  */
@@ -105,8 +118,9 @@ const char *constellation_name(const char *prefix) {
 }
 
 /*
- * GGA - the main position fix sentence, the one we care about most.
- * Time, lat/lon, fix quality, how many satellites, HDOP, altitude, geoid sep.
+ * GGA - the main position fix sentence, and the one I care about most since it
+ * carries the actual location. Time, lat/lon, fix quality, satellite count,
+ * HDOP, altitude and geoid separation all live here.
  */
 void write_GGA(char *ts, char *sentence, FILE *out) {
     char fields[20][64];
@@ -118,7 +132,7 @@ void write_GGA(char *ts, char *sentence, FILE *out) {
     if (strlen(fields[2]) > 0) { lat_dir = fields[3][0]; lat = nmea_to_decimal(atof(fields[2]), lat_dir); }
     if (strlen(fields[4]) > 0) { lon_dir = fields[5][0]; lon = nmea_to_decimal(atof(fields[4]), lon_dir); }
 
-    /* field[6] is a number 0-8 telling us the kind of fix we got */
+    /* field[6] is a 0-8 code for the kind of fix, so I map it to plain words */
     const char *fix_str[] = { "No fix", "GPS fix", "DGPS fix", "PPS fix",
                                "RTK fixed", "RTK float", "Estimated", "Manual", "Simulation" };
     int fix = atoi(fields[6]);
@@ -139,23 +153,25 @@ void write_GGA(char *ts, char *sentence, FILE *out) {
     fprintf(out, "  HDOP        : %s\n", fields[8]);
     if (strlen(fields[9]) > 0)
         fprintf(out, "  Altitude    : %s m\n", fields[9]);
-    /* geoid separation - gap between the WGS84 ellipsoid and actual sea level */
+    /* geoid separation - the gap between the WGS84 ellipsoid and real sea level;
+       I keep it because it explains why altitude can look off by ~20 m */
     if (n > 11 && strlen(fields[11]) > 0)
         fprintf(out, "  Geoid sep.  : %s m\n", fields[11]);
     fprintf(out, "\n");
 }
 
 /*
- * RMC - "recommended minimum". Handy because it's the only common sentence
- * that carries the date as well as the time. Also has status, lat/lon,
- * speed and course.
+ * RMC - "recommended minimum". I rely on this one because it's the only common
+ * sentence that carries the date alongside the time, which I need to reconstruct
+ * a full timestamp. It also gives status, lat/lon, speed and course.
  */
 void write_RMC(char *ts, char *sentence, FILE *out) {
     char fields[15][64];
     int n = split_csv(sentence, fields, 15);
     if (n < 8) { fprintf(out, "[%s] %s | (incomplete sentence, skipped)\n\n", ts, fields[0]); return; }
 
-    /* A = active (good fix), V = void (nothing yet) */
+    /* A = active (good fix), V = void (nothing yet); I gate the position
+       output on this so I don't print garbage coordinates before a lock */
     char status = (strlen(fields[2]) > 0) ? fields[2][0] : '?';
 
     fprintf(out, "[%s] %s (%s)\n", ts, fields[0], constellation_name(fields[0]));
@@ -168,15 +184,16 @@ void write_RMC(char *ts, char *sentence, FILE *out) {
         double lon = nmea_to_decimal(atof(fields[5]), fields[6][0]);
         fprintf(out, "  Latitude    : %.6f %c\n", lat, fields[4][0]);
         fprintf(out, "  Longitude   : %.6f %c\n", lon, fields[6][0]);
-        fprintf(out, "  Speed       : %s knots  (%.2f km/h)\n", fields[7], atof(fields[7]) * 1.852);  /* 1 knot = 1.852 km/h */
+        fprintf(out, "  Speed       : %s knots  (%.2f km/h)\n", fields[7], atof(fields[7]) * 1.852);  /* NMEA gives knots; I add km/h since it's what I actually think in */
         fprintf(out, "  Course      : %s deg\n", fields[8]);
     }
     fprintf(out, "\n");
 }
 
 /*
- * GSA - which satellites are actually being used for the fix, plus the DOP values.
- * Each constellation sends its own GSA, so expect up to four of these per epoch.
+ * GSA - which satellites are actually being used for the fix, plus the DOP
+ * values. Each constellation sends its own GSA, so I expect up to four of these
+ * per epoch and parse each one independently.
  */
 void write_GSA(char *ts, char *sentence, FILE *out) {
     char fields[22][64];
@@ -187,7 +204,8 @@ void write_GSA(char *ts, char *sentence, FILE *out) {
     int mode2 = atoi(fields[2]);
     const char *mode2_label = (mode2 >= 1 && mode2 <= 3) ? mode2_str[mode2] : "?";
 
-    /* newer firmware tacks a system ID onto the end (field 17) */
+    /* newer firmware tacks a system ID onto the end (field 17); I check the
+       field count first because older logs don't include it */
     const char *sys_name = "Unknown";
     if (n >= 18) {
         int sys = atoi(fields[17]);
@@ -200,7 +218,8 @@ void write_GSA(char *ts, char *sentence, FILE *out) {
     fprintf(out, "[%s] %s -- Active Satellites (%s / %s)\n", ts, fields[0], sys_name, mode2_label);
     fprintf(out, "  Selection   : %s\n", fields[1][0] == 'A' ? "Automatic" : "Manual");
 
-    /* the PRNs in use sit in fields 3..14 - up to 12 of them */
+    /* the PRNs in use sit in fields 3..14 - up to 12 of them; I skip blanks
+       and zeros so the list only shows satellites that are really contributing */
     fprintf(out, "  Active PRNs : ");
     int any = 0;
     for (int i = 3; i <= 14 && i < n; i++) {
@@ -214,16 +233,18 @@ void write_GSA(char *ts, char *sentence, FILE *out) {
 
     if (strlen(fields[15]) > 0) fprintf(out, "  PDOP        : %s\n", fields[15]);
     if (strlen(fields[16]) > 0) fprintf(out, "  HDOP        : %s\n", fields[16]);
-    /* on older firmware field 17 is VDOP instead of the system ID */
+    /* on older firmware field 17 is VDOP instead of the system ID, so I treat
+       a value above 4 as a DOP reading rather than a system number */
     if (n >= 17 && strlen(fields[17]) > 0 && atoi(fields[17]) > 4)
         fprintf(out, "  VDOP        : %s\n", fields[17]);
     fprintf(out, "\n");
 }
 
 /*
- * GSV - satellites currently in view (not necessarily used).
- * Comes in batches: up to 4 sats per message, several messages per epoch.
- * Same handler works for every constellation. We list PRN, elevation, azimuth, SNR.
+ * GSV - satellites currently in view (not necessarily used in the fix).
+ * It arrives in batches: up to 4 sats per message, several messages per epoch.
+ * I use one handler for every constellation and list PRN, elevation, azimuth
+ * and SNR for each satellite.
  */
 void write_GSV(char *ts, char *sentence, FILE *out) {
     char fields[24][64];
@@ -238,7 +259,7 @@ void write_GSV(char *ts, char *sentence, FILE *out) {
     fprintf(out, "[%s] %s -- %s Satellites in View (message %d of %d, total visible: %d)\n",
             ts, fields[0], sys, msg_num, total_msgs, total_sats);
 
-    /* walk the sats 4 fields at a time: PRN, elev, azim, SNR */
+    /* I walk the sats 4 fields at a time: PRN, elev, azim, SNR */
     int i = 4;
     int sat_num = (msg_num - 1) * 4 + 1;
     while (i < n && i + 2 < 24) {
@@ -246,7 +267,7 @@ void write_GSV(char *ts, char *sentence, FILE *out) {
         int prn  = atoi(fields[i]);
         int elev = (i + 1 < n) ? atoi(fields[i + 1]) : 0;
         int azim = (i + 2 < n) ? atoi(fields[i + 2]) : 0;
-        int snr  = (i + 3 < n && strlen(fields[i + 3]) > 0) ? atoi(fields[i + 3]) : -1;  /* blank SNR = not tracked */
+        int snr  = (i + 3 < n && strlen(fields[i + 3]) > 0) ? atoi(fields[i + 3]) : -1;  /* I use -1 to mark a blank SNR (sat seen but not tracked) */
 
         fprintf(out, "  Sat #%-2d : PRN=%-3d  Elev=%2d deg  Azim=%3d deg  SNR=",
                 sat_num++, prn, elev, azim);
@@ -258,8 +279,9 @@ void write_GSV(char *ts, char *sentence, FILE *out) {
 }
 
 /*
- * VTG - course and ground speed. RMC already gives speed, but VTG is nice
- * because it spells out km/h directly instead of making us convert.
+ * VTG - course and ground speed. RMC already gives me speed, but I parse VTG
+ * too because it spells out km/h directly, which I use as a sanity check
+ * against my own knots-to-km/h conversion.
  */
 void write_VTG(char *ts, char *sentence, FILE *out) {
     char fields[12][64];
@@ -276,8 +298,9 @@ void write_VTG(char *ts, char *sentence, FILE *out) {
 }
 
 /*
- * GLL - geographic position. An old leftover from the LORAN days.
- * GGA covers everything this does and more, but we parse it anyway for completeness.
+ * GLL - geographic position, a leftover from the LORAN days. GGA already covers
+ * everything GLL does and more, but I parse it anyway so the report accounts for
+ * every sentence the module emits rather than silently dropping some.
  */
 void write_GLL(char *ts, char *sentence, FILE *out) {
     char fields[10][64];
@@ -297,8 +320,8 @@ void write_GLL(char *ts, char *sentence, FILE *out) {
     fprintf(out, "\n");
 }
 
-/* Anything we don't recognize (proprietary $PAIR/$PQTM, bootloader chatter, etc.)
- * just gets dumped out as-is so we don't lose it. */
+/* Anything I don't recognize (proprietary $PAIR/$PQTM, bootloader chatter, etc.)
+ * I write out as-is rather than discard it, so nothing in the log gets lost. */
 void write_unknown(char *ts, char *sentence, FILE *out) {
     fprintf(out, "[%s] (proprietary / unrecognized) %s\n\n", ts, sentence);
 }
@@ -322,13 +345,13 @@ int main(void) {
     int total = 0, gga = 0, rmc = 0, gsa = 0, gsv = 0, vtg = 0, gll = 0, other = 0;
 
     while (fgets(line, sizeof(line), fp)) {
-        line[strcspn(line, "\r\n")] = '\0';   /* drop the trailing newline */
+        line[strcspn(line, "\r\n")] = '\0';   /* strip the trailing newline so it doesn't leak into my output */
         if (strlen(line) == 0) continue;
 
         char ts[40] = "";
         char *nmea = extract_parts(line, ts, sizeof(ts));
 
-        /* lines with no '$' (bootloader output, comments) get passed straight through */
+        /* lines with no '$' (bootloader output, comments) I pass straight through */
         if (!nmea) {
             if (strlen(line) > 0)
                 fprintf(out, "[%s] (non-NMEA) %s\n\n", ts, line);
@@ -337,7 +360,7 @@ int main(void) {
 
         total++;
 
-        /* skip past the talker ID ($GN, $GP, ...) to get at the 3-letter type */
+        /* I skip past the talker ID ($GN, $GP, ...) to reach the 3-letter type */
         char *type = nmea + 3;
 
         if      (strncmp(type, "GGA", 3) == 0) { write_GGA(ts, nmea, out); gga++; }

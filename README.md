@@ -1,59 +1,94 @@
-# NMEA Data Parsing — Screenless Smart Wristband (EDABK Lab)
+# NMEA GPS Log Parser — Screenless Smart Wristband (EDABK Lab)
 
-A lightweight C program that parses raw NMEA 0183 sentences from GPS module log files and outputs structured, human-readable data to a text file.
+A small C program I wrote to turn raw NMEA 0183 GPS logs into a structured,
+human-readable report. I built it while working on the **Screenless Smart
+Wristband** project at **EDABK Lab**, where I needed a quick, dependable way to
+inspect what the wristband's GNSS module was actually reporting during field
+tests.
 
-Tested on the **LC76G GNSS module** (Quectel) as part of the Screenless Smart Wristband project at **EDABK Lab**.
+The parser is tested against logs from the **Quectel LC76G** GNSS module, but it
+follows the NMEA 0183 standard, so it should work with any receiver that speaks
+the same sentence format.
 
 ---
 
-## Features
+## Why I built this
 
-- Parses all standard NMEA 0183 sentence types
-- Handles timestamped log format: `[YYYY-MM-DD_HH:MM:SS:mmm]$SENTENCE,...`
-- Converts NMEA coordinates (ddmm.mmmm) to decimal degrees
+The LC76G streams NMEA sentences — compact, comma-separated lines like
+`$GNGGA,060746.000,2055.28,N,10551.33,E,1,13,0.72,8.385,M,...`. They're easy for
+a machine to read but slow for me to parse by eye, especially when I'm scanning
+hundreds of them looking for when the module got a fix or how many satellites it
+was tracking.
+
+I wanted a tool that would:
+
+- decode every sentence type the module emits, not just the position ones,
+- convert the raw `ddmm.mmmm` coordinates into decimal degrees I can paste
+  straight into a map,
+- never silently drop a line — even proprietary or unrecognized sentences get
+  written out so I don't lose anything,
+- and run anywhere with nothing but a C compiler.
+
+So I wrote it in plain C using only the standard library.
+
+---
+
+## What it does
+
+- Parses all the standard NMEA 0183 sentence types (see table below)
+- Handles my timestamped log format: `[YYYY-MM-DD_HH:MM:SS:mmm]$SENTENCE,...`
+- Converts NMEA coordinates (`ddmm.mmmm`) to decimal degrees, with S/W negative
 - Identifies all four GNSS constellations (GPS, GLONASS, Galileo, BeiDou)
 - Passes non-NMEA lines (bootloader output, proprietary commands) through unchanged
-- Writes a full parsed report + summary to an output text file
+- Writes a full parsed report plus a summary count to an output text file
 
 ---
 
-## Supported Sentence Types
+## Supported sentence types
 
-| Sentence | Description |
-|----------|-------------|
+| Sentence | What I pull out of it |
+|----------|-----------------------|
 | `$xxGGA` | Primary position fix — latitude, longitude, altitude, satellites, HDOP |
 | `$xxRMC` | Recommended minimum — date, time, speed, course |
 | `$xxGSA` | Active satellites and DOP values (PDOP, HDOP, VDOP) |
-| `$xxGSV` | Satellites in view with PRN, elevation, azimuth, and SNR per satellite |
+| `$xxGSV` | Satellites in view, with PRN, elevation, azimuth and SNR for each |
 | `$xxVTG` | Course over ground and speed (knots + km/h) |
 | `$xxGLL` | Geographic position (legacy LORAN-era sentence) |
-| Other    | Proprietary sentences written verbatim for reference |
+| Other    | Proprietary sentences, written verbatim for reference |
 
-The `xx` prefix identifies the constellation:
+The `xx` prefix is the talker ID and tells me which constellation a sentence
+came from:
+
 - `GP` — GPS (USA)
 - `GL` — GLONASS (Russia)
 - `GA` — Galileo (Europe)
 - `GB` — BeiDou (China)
-- `GN` — Multi-constellation combined
+- `GN` — multi-constellation, combined solution
 
 ---
 
-## Usage
+## Building and running
 
-1. Place your NMEA log file in the same directory as the compiled binary.
-2. Update the `in_file` filename in `main()` if needed (default: `nmea_log data_lc76g(pb).txt`).
-3. Compile and run:
+I keep the dependencies to nothing but the C standard library, so a single
+`gcc` command is enough:
 
 ```bash
 gcc NMEA_data_split.c -o nmea_parser
 ./nmea_parser
 ```
 
-4. Results are written to `nmea_parsed_output.txt`.
+By default it reads `nmea_log data_lc76g(pb).txt` and writes
+`nmea_parsed_output.txt`. To point it at a different log, change the `in_file`
+name in `main()` and recompile. (I kept the I/O filenames as constants in
+`main()` to keep the program simple; swapping them for command-line arguments is
+the obvious next step if I reuse this beyond the lab.)
+
+A sample input log and its parsed output are included in this repo so you can
+see the format without needing the hardware.
 
 ---
 
-## Output Example
+## Example output
 
 ```
 [2026-04-03_13:07:45:027] $GNGGA (Multi-constellation)
@@ -85,16 +120,44 @@ gcc NMEA_data_split.c -o nmea_parser
 ====================================================
 ```
 
-*(Captured from a 131-second stationary field test of the wristband's LC76G module.)*
+*Captured from a 131-second stationary field test of the wristband's LC76G module.*
 
 ---
 
-## Project Context
+## How it's put together
 
-This parser was developed as part of the **Screenless Smart Wristband** project at **EDABK Lab**. The wristband uses a GNSS module to acquire position data, which is then transmitted and processed. This tool is used to validate and analyze raw NMEA log output captured from the module during testing.
+I split the program into one small function per responsibility so each piece
+stays easy to reason about:
+
+- `split_csv()` — breaks a sentence into fields, stopping at the `*` checksum
+  marker and leaving the original string intact.
+- `nmea_to_decimal()` — converts `ddmm.mmmm` coordinates to decimal degrees.
+- `extract_parts()` — separates the timestamp from the sentence on each log line.
+- `constellation_name()` — maps a talker ID to a readable constellation name.
+- `write_GGA()` / `write_RMC()` / `write_GSA()` / `write_GSV()` / `write_VTG()` /
+  `write_GLL()` — one handler per sentence type, each formatting its own section
+  of the report.
+- `main()` — reads the log line by line, dispatches each sentence to its handler,
+  and prints a summary at the end.
+
+I commented the source generously, including the small judgement calls (for
+example, how I tell an older firmware's VDOP field apart from a newer firmware's
+system-ID field in the GSA sentence).
+
+---
+
+## Project context
+
+This parser is part of the **Screenless Smart Wristband** project at **EDABK
+Lab**. The wristband uses a GNSS module to acquire position data, which is then
+transmitted and processed elsewhere in the system. I use this tool to validate
+and analyze the raw NMEA output captured from the module during testing, so I
+can confirm the hardware is reporting sane positions, fix quality and satellite
+counts before that data goes any further downstream.
 
 ---
 
 ## Dependencies
 
-Standard C library only (`stdio.h`, `string.h`, `stdlib.h`). No external dependencies.
+C standard library only (`stdio.h`, `string.h`, `stdlib.h`). No external
+dependencies, no build system to set up.
