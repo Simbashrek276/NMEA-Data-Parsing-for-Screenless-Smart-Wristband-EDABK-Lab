@@ -1,8 +1,8 @@
 # NMEA GPS Log Parser — Screenless Smart Wristband (EDABK Lab)
 
-A small C program I wrote to turn raw NMEA 0183 GPS logs into a structured,
+Hi! This is a small C program I wrote to turn raw NMEA 0183 GPS logs into a structured,
 human-readable report. I built it while working on the **Screenless Smart
-Wristband** project at **EDABK Lab**, where I needed a quick, dependable way to
+Wristband** project at **EDABK Lab** led by a senior named Duc, where I needed a quick, dependable way to
 inspect what the wristband's GNSS module was actually reporting during field
 tests.
 
@@ -14,7 +14,7 @@ the same sentence format.
 
 ## Why I built this
 
-The LC76G streams NMEA sentences — compact, comma-separated lines like
+The LC76G streams NMEA sentences, which are compact, comma-separated lines like
 `$GNGGA,060746.000,2055.28,N,10551.33,E,1,13,0.72,8.385,M,...`. They're easy for
 a machine to read but slow for me to parse by eye, especially when I'm scanning
 hundreds of them looking for when the module got a fix or how many satellites it
@@ -25,7 +25,7 @@ I wanted a tool that would:
 - decode every sentence type the module emits, not just the position ones,
 - convert the raw `ddmm.mmmm` coordinates into decimal degrees I can paste
   straight into a map,
-- never silently drop a line — even proprietary or unrecognized sentences get
+- doesn't skip/ignore a unconfigured lines, and even proprietary or unrecognized sentences get
   written out so I don't lose anything,
 - and run anywhere with nothing but a C compiler.
 
@@ -159,5 +159,4 @@ counts before that data goes any further downstream.
 
 ## Dependencies
 
-C standard library only (`stdio.h`, `string.h`, `stdlib.h`). No external
-dependencies, no build system to set up.
+For this project, some C standard library is needed only (`stdio.h`, `string.h`, `stdlib.h`). There should not be any external dependencies or build systems to set up.
