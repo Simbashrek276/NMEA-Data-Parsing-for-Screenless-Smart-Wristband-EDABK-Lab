@@ -11,6 +11,21 @@ follows the NMEA 0183 standard, so it should work with any receiver that speaks
 the same sentence format.
 
 ---
+### System overview
+
+The block diagram below is a section of the full wristband schematic. The
+nRF52840 microcontroller sits at the centre of the system and talks to the GNSS
+module over UART, which is exactly the link that carries the NMEA stream this
+tool decodes. Each peripheral, including the GNSS and LTE,
+is powered through its own MOSFET load switch so the firmware can turn it off
+when it is not in use. That matters a great deal for battery life on a device
+this small.
+
+<p align="center">
+  <img src="media/A%20section%20of%20the%20whole%20wristband%20schematics.png" alt="Block diagram showing a section of the wristband schematic" width="800">
+</p>
+
+<p align="center"><em>A section of the wristband schematic showing power and signal paths</em></p>
 
 ## Why I built this
 
@@ -166,22 +181,6 @@ Everything is packed onto a round board small enough to be worn on the wrist.
 </p>
 
 <p align="center"><em>The assembled wristband PCB</em></p>
-
-### System overview
-
-The block diagram below is a section of the full wristband schematic. The
-nRF52840 microcontroller sits at the centre of the system and talks to the GNSS
-module over UART, which is exactly the link that carries the NMEA stream this
-tool decodes. Each peripheral, including the GNSS and LTE,
-is powered through its own MOSFET load switch so the firmware can turn it off
-when it is not in use. That matters a great deal for battery life on a device
-this small.
-
-<p align="center">
-  <img src="media/A%20section%20of%20the%20whole%20wristband%20schematics.png" alt="Block diagram showing a section of the wristband schematic" width="800">
-</p>
-
-<p align="center"><em>A section of the wristband schematic showing power and signal paths</em></p>
 
 ---
 
