@@ -1,4 +1,4 @@
-# NMEA GPS Log Parser — Screenless Smart Wristband (EDABK Lab)
+# NMEA GPS Log Parser: Screenless Smart Wristband (EDABK Lab)
 
 Hi! This is a small C program I wrote to turn raw NMEA 0183 GPS logs into a structured,
 human-readable report. I built it while working on the **Screenless Smart
@@ -154,6 +154,34 @@ transmitted and processed elsewhere in the system. I use this tool to validate
 and analyze the raw NMEA output captured from the module during testing, so I
 can confirm the hardware is reporting sane positions, fix quality and satellite
 counts before that data goes any further downstream.
+
+### The board
+
+Every log this parser reads comes from the board shown below, which is the main
+PCB of the wristband. The Quectel LC76G GNSS module sits on the right corner of the PCB.
+Everything is packed onto a round board small enough to be worn on the wrist.
+
+<p align="center">
+  <img src="media/EDABK%20wristband%20PCB.jpg" alt="Assembled EDABK wristband PCB with the LTE modem and Quectel LC76G GNSS module" width="420">
+</p>
+
+<p align="center"><em>The assembled wristband PCB</em></p>
+
+### System overview
+
+The block diagram below is a section of the full wristband schematic. The
+nRF52840 microcontroller sits at the centre of the system and talks to the GNSS
+module over UART, which is exactly the link that carries the NMEA stream this
+tool decodes. Each peripheral, including the GNSS and LTE,
+is powered through its own MOSFET load switch so the firmware can turn it off
+when it is not in use. That matters a great deal for battery life on a device
+this small.
+
+<p align="center">
+  <img src="media/A%20section%20of%20the%20whole%20wristband%20schematics.png" alt="Block diagram showing a section of the wristband schematic" width="800">
+</p>
+
+<p align="center"><em>A section of the wristband schematic showing power and signal paths</em></p>
 
 ---
 
